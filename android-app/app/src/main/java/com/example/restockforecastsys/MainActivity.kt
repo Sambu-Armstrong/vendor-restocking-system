@@ -33,11 +33,15 @@ class MainActivity : ComponentActivity() {
             vendorDao = database.vendorDao()
         )
 
+        // NEW: Initialize Product Repository
+        val productRepository = com.example.restockforecastsys.data.repository.ProductRepository(database.productDao())
+
         // 2. Initialize SessionManager
         val sessionManager = SessionManager(applicationContext)
 
-        // 3. Initialize AuthViewModel
+        // 3. Initialize ViewModels
         val authViewModel = AuthViewModel(authRepository, sessionManager)
+        val productViewModel = com.example.restockforecastsys.ui.products.ProductViewModel(productRepository, sessionManager)
 
         setContent {
             MaterialTheme {
@@ -47,7 +51,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
 
-                    // Start screen depends on whether a local session exists
                     val startDestination = remember {
                         if (authViewModel.isUserLoggedIn()) "home" else "login"
                     }
@@ -59,13 +62,9 @@ class MainActivity : ComponentActivity() {
                         composable("login") {
                             LoginScreen(
                                 viewModel = authViewModel,
-                                onNavigateToRegister = {
-                                    navController.navigate("register")
-                                },
+                                onNavigateToRegister = { navController.navigate("register") },
                                 onLoginSuccess = {
-                                    navController.navigate("home") {
-                                        popUpTo("login") { inclusive = true }
-                                    }
+                                    navController.navigate("home") { popUpTo("login") { inclusive = true } }
                                 }
                             )
                         }
@@ -73,13 +72,9 @@ class MainActivity : ComponentActivity() {
                         composable("register") {
                             RegisterScreen(
                                 viewModel = authViewModel,
-                                onNavigateToLogin = {
-                                    navController.popBackStack()
-                                },
+                                onNavigateToLogin = { navController.popBackStack() },
                                 onRegisterSuccess = {
-                                    navController.navigate("home") {
-                                        popUpTo("login") { inclusive = true }
-                                    }
+                                    navController.navigate("home") { popUpTo("login") { inclusive = true } }
                                 }
                             )
                         }
@@ -88,10 +83,20 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 viewModel = authViewModel,
                                 onLogoutSuccess = {
-                                    navController.navigate("login") {
-                                        popUpTo("home") { inclusive = true }
-                                    }
-                                }
+                                    navController.navigate("login") { popUpTo("home") { inclusive = true } }
+                                },
+                                onNavigateToDailyLog = { }, // Placeholder
+                                onNavigateToProducts = { navController.navigate("products") }, // WIRED
+                                onNavigateToForecast = { }, // Placeholder
+                                onNavigateToSubscription = { } // Placeholder
+                            )
+                        }
+
+                        // NEW: Products Screen Route
+                        composable("products") {
+                            com.example.restockforecastsys.ui.products.ProductsScreen(
+                                viewModel = productViewModel,
+                                onNavigateBack = { navController.popBackStack() }
                             )
                         }
                     }

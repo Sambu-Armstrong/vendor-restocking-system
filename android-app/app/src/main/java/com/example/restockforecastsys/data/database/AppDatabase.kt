@@ -14,10 +14,12 @@ import com.example.restockforecastsys.data.entity.Vendor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.example.restockforecastsys.data.dao.ProductDao
+import com.example.restockforecastsys.data.entity.Product
 
 @Database(
-    entities = [Role::class, User::class, Vendor::class],
-    version = 1,
+    entities = [Role::class, User::class, Vendor::class, Product::class],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,6 +27,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun roleDao(): RoleDao
     abstract fun userDao(): UserDao
     abstract fun vendorDao(): VendorDao
+    abstract fun productDao(): ProductDao
+
 
     companion object {
         @Volatile
