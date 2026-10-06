@@ -2,6 +2,7 @@ package com.example.restockforecastsys.data.entity
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
@@ -12,7 +13,8 @@ import androidx.room.PrimaryKey
             parentColumns = ["roleId"],
             childColumns = ["roleId"]
         )
-    ]
+    ],
+    indices = [Index(value = ["roleId"])]
 )
 data class User(
     @PrimaryKey(autoGenerate = true)
@@ -20,7 +22,7 @@ data class User(
     val name: String,
     val email: String,
     val phone: String,
-    val password: String,       // hashed in AuthController, never stored plain
+    val password: String,
     val dateRegistered: Long,
     val roleId: Int
 )
