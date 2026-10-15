@@ -8,7 +8,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.restockforecastsys.data.dao.RoleDao
 import com.example.restockforecastsys.data.dao.UserDao
 import com.example.restockforecastsys.data.dao.VendorDao
+import com.example.restockforecastsys.data.dao.StockLogDao
+import com.example.restockforecastsys.data.dao.SalesEntryDao
 import com.example.restockforecastsys.data.entity.Role
+import com.example.restockforecastsys.data.entity.SalesEntry
+import com.example.restockforecastsys.data.entity.StockLog
 import com.example.restockforecastsys.data.entity.User
 import com.example.restockforecastsys.data.entity.Vendor
 import kotlinx.coroutines.CoroutineScope
@@ -18,8 +22,9 @@ import com.example.restockforecastsys.data.dao.ProductDao
 import com.example.restockforecastsys.data.entity.Product
 
 @Database(
-    entities = [Role::class, User::class, Vendor::class, Product::class],
-    version = 2,
+    // Added SalesEntry and StockLog here
+    entities = [Role::class, User::class, Vendor::class, Product::class, SalesEntry::class, StockLog::class],
+    version = 3, // Bumped to 3
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,6 +33,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun vendorDao(): VendorDao
     abstract fun productDao(): ProductDao
+    abstract fun salesEntryDao(): SalesEntryDao
+    abstract fun stockLogDao(): StockLogDao
 
 
     companion object {
