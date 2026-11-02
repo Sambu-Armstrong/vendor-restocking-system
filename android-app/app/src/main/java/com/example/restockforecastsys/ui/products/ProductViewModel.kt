@@ -2,15 +2,17 @@ package com.example.restockforecastsys.ui.products
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.restockforecastsys.AddProductRequest
+import com.example.restockforecastsys.RetrofitClient
 import com.example.restockforecastsys.data.catalog.CatalogItem
+import com.example.restockforecastsys.data.catalog.ProductCatalog
 import com.example.restockforecastsys.data.entity.Product
 import com.example.restockforecastsys.data.repository.ProductRepository
 import com.example.restockforecastsys.util.SessionManager
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class ProductViewModel(
@@ -21,42 +23,75 @@ class ProductViewModel(
     private val _vendorProducts = MutableStateFlow<List<Product>>(emptyList())
     val vendorProducts: StateFlow<List<Product>> = _vendorProducts.asStateFlow()
 
-    private var collectionJob: Job? = null
-
-    // Called dynamically when the screen is opened
     fun loadVendorProducts() {
         val currentVendorId = sessionManager.getUserId()
-        if (currentVendorId != -1) {
-            collectionJob?.cancel() // Clear any old data streams
-            collectionJob = viewModelScope.launch {
-                repository.getProductsForVendor(currentVendorId).collectLatest { products ->
-                    _vendorProducts.value = products
+        if (currentVendorId == -1) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val response = RetrofitClient.apiService.getVendorProducts(currentVendorId)
+                if (response.isSuccessful) {
+                    val cloudList = response.body().orEmpty()
+                    _vendorProducts.value = cloudList.map { dto ->
+                        val catalogMatch = ProductCatalog.items.find { it.name == dto.display_name }
+                        Product(
+                            productId = dto.product_id,
+                            vendorId = currentVendorId,
+                            name = dto.display_name,
+                            category = catalogMatch?.category ?: "Produce",
+                            shelfLifeDays = catalogMatch?.defaultShelfLifeDays ?: 5,
+                            unitOfMeasure = catalogMatch?.defaultUnitOfMeasure ?: "kg",
+                            currentPrice = dto.current_price,
+                            dateAdded = System.currentTimeMillis()
+                        )
+                    }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
 
     fun addProductFromCatalog(catalogItem: CatalogItem) {
         val currentVendorId = sessionManager.getUserId()
-        if (currentVendorId == -1) return // Failsafe
+        if (currentVendorId == -1) return
 
-        // Prevent duplicate entries
         if (_vendorProducts.value.any { it.name == catalogItem.name }) return
 
-        val newProduct = Product(
-            vendorId = currentVendorId,
-            name = catalogItem.name,
-            category = catalogItem.category,
-            shelfLifeDays = catalogItem.defaultShelfLifeDays,
-            unitOfMeasure = catalogItem.defaultUnitOfMeasure,
-            currentPrice = 0.0,
-            dateAdded = System.currentTimeMillis()
-        )
-
-        viewModelScope.launch { repository.addProduct(newProduct) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val request = AddProductRequest(
+                    vendor_id = currentVendorId,
+                    display_name = catalogItem.name,
+                    model_name = catalogItem.name,
+                    current_price = 0.0
+                )
+                val response = RetrofitClient.apiService.addVendorProduct(request)
+                if (response.isSuccessful) {
+                    loadVendorProducts()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     fun removeProduct(product: Product) {
-        viewModelScope.launch { repository.removeProduct(product) }
+        val currentVendorId = sessionManager.getUserId()
+        if (currentVendorId == -1) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val response = RetrofitClient.apiService.deleteVendorProduct(
+                    vendorId = currentVendorId,
+                    productId = product.productId
+                )
+                if (response.isSuccessful) {
+                    loadVendorProducts()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 }

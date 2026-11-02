@@ -14,7 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.restockforecastsys.data.database.AppDatabase
 import com.example.restockforecastsys.data.repository.AuthRepository
-import com.example.restockforecastsys.ui.HomeScreen
+import com.example.restockforecastsys.ui.DailyLogViewModel
 import com.example.restockforecastsys.ui.auth.AuthViewModel
 import com.example.restockforecastsys.ui.auth.LoginScreen
 import com.example.restockforecastsys.ui.auth.RegisterScreen
@@ -33,7 +33,6 @@ class MainActivity : ComponentActivity() {
             vendorDao = database.vendorDao()
         )
 
-        // NEW: Initialize Product Repository
         val productRepository = com.example.restockforecastsys.data.repository.ProductRepository(database.productDao())
 
         // 2. Initialize SessionManager
@@ -42,6 +41,7 @@ class MainActivity : ComponentActivity() {
         // 3. Initialize ViewModels
         val authViewModel = AuthViewModel(authRepository, sessionManager)
         val productViewModel = com.example.restockforecastsys.ui.products.ProductViewModel(productRepository, sessionManager)
+        val dailyLogViewModel = DailyLogViewModel(sessionManager)
 
         setContent {
             MaterialTheme {
@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
                     val navController = rememberNavController()
 
                     val startDestination = remember {
-                        if (authViewModel.isUserLoggedIn()) "home" else "login"
+                        if (authViewModel.isUserLoggedIn()) "main_app" else "login"
                     }
 
                     NavHost(
@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
                                 viewModel = authViewModel,
                                 onNavigateToRegister = { navController.navigate("register") },
                                 onLoginSuccess = {
-                                    navController.navigate("home") { popUpTo("login") { inclusive = true } }
+                                    navController.navigate("main_app") { popUpTo("login") { inclusive = true } }
                                 }
                             )
                         }
@@ -74,29 +74,19 @@ class MainActivity : ComponentActivity() {
                                 viewModel = authViewModel,
                                 onNavigateToLogin = { navController.popBackStack() },
                                 onRegisterSuccess = {
-                                    navController.navigate("home") { popUpTo("login") { inclusive = true } }
+                                    navController.navigate("main_app") { popUpTo("login") { inclusive = true } }
                                 }
                             )
                         }
 
-                        composable("home") {
-                            HomeScreen(
-                                viewModel = authViewModel,
-                                onLogoutSuccess = {
-                                    navController.navigate("login") { popUpTo("home") { inclusive = true } }
-                                },
-                                onNavigateToDailyLog = { }, // Placeholder
-                                onNavigateToProducts = { navController.navigate("products") }, // WIRED
-                                onNavigateToForecast = { }, // Placeholder
-                                onNavigateToSubscription = { } // Placeholder
-                            )
-                        }
-
-                        // NEW: Products Screen Route
-                        composable("products") {
-                            com.example.restockforecastsys.ui.products.ProductsScreen(
-                                viewModel = productViewModel,
-                                onNavigateBack = { navController.popBackStack() }
+                        composable("main_app") {
+                            com.example.restockforecastsys.ui.MainAppScreen(
+                                authViewModel = authViewModel,
+                                productViewModel = productViewModel,
+                                dailyLogViewModel = dailyLogViewModel,
+                                onLogout = {
+                                    navController.navigate("login") { popUpTo("main_app") { inclusive = true } }
+                                }
                             )
                         }
                     }

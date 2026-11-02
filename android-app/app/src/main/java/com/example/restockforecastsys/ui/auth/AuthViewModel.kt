@@ -16,12 +16,12 @@ import kotlinx.coroutines.launch
 sealed class AuthState {
     object Idle : AuthState()
     object Loading : AuthState()
-    object Success : AuthState() // Changed from expecting a local Room User object
+    object Success : AuthState()
     data class Error(val message: String) : AuthState()
 }
 
 class AuthViewModel(
-    private val authRepository: AuthRepository, // Kept in constructor so your ViewModelFactory doesn't crash
+    private val authRepository: AuthRepository,
     private val sessionManager: SessionManager
 ) : ViewModel() {
 
@@ -45,10 +45,15 @@ class AuthViewModel(
                 val response = RetrofitClient.apiService.loginUser(request)
 
                 if (response.isSuccessful) {
-                    // Extract vendor_id from API response to maintain compatibility with your SessionManager
-                    val vendorId = response.body()?.vendor_id
+                    val body = response.body()
+                    val vendorId = body?.vendor_id
+
                     if (vendorId != null) {
+                        sessionManager.clearSession()
                         sessionManager.saveUserId(vendorId)
+                        body.first_name?.let {
+                            sessionManager.saveUserName(it)
+                        }
                     }
                     authState = AuthState.Success
                 } else {
@@ -60,7 +65,6 @@ class AuthViewModel(
         }
     }
 
-    // UPDATED: Now matches the RegisterScreen parameters and connects to Flask backend
     fun registerVendor(
         firstName: String,
         lastName: String,
@@ -105,5 +109,9 @@ class AuthViewModel(
 
     fun isUserLoggedIn(): Boolean {
         return sessionManager.isLoggedIn()
+    }
+
+    fun getUserName(): String {
+        return sessionManager.getUserName() ?: "Vendor"
     }
 }
