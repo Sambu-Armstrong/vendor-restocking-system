@@ -19,7 +19,8 @@ import androidx.room.PrimaryKey
 data class User(
     @PrimaryKey(autoGenerate = true)
     val userId: Int = 0,
-    val name: String,
+    val firstName: String, // Split from 'name'
+    val lastName: String,  // Split from 'name'
     val email: String,
     val phone: String,
     val password: String,

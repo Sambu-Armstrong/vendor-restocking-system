@@ -1,9 +1,11 @@
 package com.example.restockforecastsys
-// Change this if your package name is different
 
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
+import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Path
 
 data class RegisterRequest(
     val firstName: String,
@@ -24,7 +26,51 @@ data class LoginRequest(
 data class AuthResponse(
     val message: String,
     val token: String? = null,
-    val vendor_id: Int? = null
+    val vendor_id: Int? = null,
+    val first_name: String? = null
+)
+
+data class CloudProductDto(
+    val product_id: Int,
+    val display_name: String,
+    val model_name: String,
+    val current_price: Double
+)
+
+data class AddProductRequest(
+    val vendor_id: Int,
+    val display_name: String,
+    val model_name: String,
+    val current_price: Double = 0.0
+)
+
+data class DailyLogDto(
+    val id: Int,
+    val vendor_id: Int,
+    val product_id: Int,
+    val product_name: String,
+    val date: String,
+    val opening_stock: Double,
+    val closing_stock: Double,
+    val sales: Double,
+    val waste: Double
+)
+
+data class DailyLogEntryPayload(
+    val product_id: Int,
+    val opening_stock: Double = 0.0,
+    val sales: Double = 0.0,
+    val waste: Double = 0.0
+)
+
+data class SaveDailyLogRequest(
+    val vendor_id: Int,
+    val mode: String, // "morning" or "evening"
+    val entries: List<DailyLogEntryPayload>
+)
+
+data class GenericResponse(
+    val message: String
 )
 
 interface ApiService {
@@ -33,4 +79,22 @@ interface ApiService {
 
     @POST("login")
     suspend fun loginUser(@Body request: LoginRequest): Response<AuthResponse>
+
+    @GET("products/{vendor_id}")
+    suspend fun getVendorProducts(@Path("vendor_id") vendorId: Int): Response<List<CloudProductDto>>
+
+    @POST("products")
+    suspend fun addVendorProduct(@Body request: AddProductRequest): Response<GenericResponse>
+
+    @DELETE("products/{vendor_id}/{product_id}")
+    suspend fun deleteVendorProduct(
+        @Path("vendor_id") vendorId: Int,
+        @Path("product_id") productId: Int
+    ): Response<GenericResponse>
+
+    @GET("daily-logs/{vendor_id}")
+    suspend fun getDailyLogs(@Path("vendor_id") vendorId: Int): Response<List<DailyLogDto>>
+
+    @POST("daily-logs")
+    suspend fun saveDailyLogs(@Body request: SaveDailyLogRequest): Response<GenericResponse>
 }
