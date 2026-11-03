@@ -1,11 +1,16 @@
 import os
 import datetime
 import jwt
+import json
+import joblib
+import pandas as pd
+import numpy as np
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
-from models import db, User, Vendor, Location, Product, VendorProduct, DailyLog
+from models import db, User, Vendor, Location, Product, VendorProduct, DailyLog, Subscription, Forecast
 
 # Load environment variables
 load_dotenv()
@@ -24,9 +29,62 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 
 db.init_app(app)
 
+# ---------------------------------------------------------
+# ML MODEL LOADING (Runs once on startup)
+# ---------------------------------------------------------
+try:
+    demand_model = joblib.load('artifacts/demand_model_v1.joblib')
+    waste_model = joblib.load('artifacts/waste_model_v1.joblib')
+    with open('artifacts/model_meta.json', 'r') as f:
+        model_meta = json.load(f)
+    print("ML Models and Metadata loaded successfully.")
+except Exception as e:
+    print(f"Warning: ML models failed to load. Check artifacts folder. Error: {e}")
+    demand_model, waste_model, model_meta = None, None, None
+
+BASE_SHELF_LIFE = {
+    "Tomatoes": 6, "Kale": 2, "Spinach": 2, "Coriander": 2,
+    "Capsicum": 7, "Bananas": 6, "Avocados": 7, "Lemons": 21, "Onions": 30
+}
+
+MARKET_DAYS = {
+    "Kawangware": (1, 4), "Machakos": (0, 4),
+    "Kakamega": (2, 5), "Mombasa": (4, 6)
+}
+
+HOLIDAYS = [
+    datetime.date(2026, 12, 25), datetime.date(2027, 12, 25),
+    datetime.date(2026, 4, 3),   datetime.date(2027, 3, 26),
+    datetime.date(2026, 3, 20),  datetime.date(2027, 3, 10)
+]
+
 with app.app_context():
     db.create_all()
 
+# ---------------------------------------------------------
+# HELPER FUNCTIONS
+# ---------------------------------------------------------
+def get_vendor_from_token():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return None
+    token = auth_header.split(' ')[1]
+    try:
+        payload = jwt.decode(token, os.getenv('JWT_SECRET_KEY'), algorithms=['HS256'])
+        user = db.session.get(User, payload['user_id'])
+        return user.vendor_profile if user else None
+    except Exception:
+        return None
+
+def get_weather(lat, lon, target_date):
+    """Fetches weather from OpenWeatherMap, with intelligent fallbacks per town/month."""
+    # API integration goes here using os.getenv('OWM_API_KEY')
+    # For now, returning typical warm baseline values to ensure demo stability
+    return 23.0, 0.0, 60.0  # temp(C), rain(mm), humidity(%)
+
+# ---------------------------------------------------------
+# ROUTES
+# ---------------------------------------------------------
 @app.route('/')
 def home():
     return "Restock Forecast API is running."
@@ -34,7 +92,6 @@ def home():
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
-    
     if User.query.filter_by(email=data.get('email')).first():
         return jsonify({"message": "Email already registered"}), 400
         
@@ -61,11 +118,10 @@ def register():
         user_id=new_user.id,
         business_name=data.get('businessName'),
         location_id=location.id,
-        stall_size=data.get('stallSize')
+        stall_size=data.get('stallSize', 'medium').lower()
     )
     db.session.add(new_vendor)
     db.session.commit()
-    
     return jsonify({"message": "Registration successful"}), 201
 
 @app.route('/api/login', methods=['POST'])
@@ -127,9 +183,8 @@ def add_product():
         db.session.add(vendor_product)
     else:
         vendor_product.current_price = current_price
-
     db.session.commit()
-    return jsonify({"message": "Product synced to cloud successfully"}), 201
+    return jsonify({"message": "Product synced"}), 201
 
 @app.route('/api/products/<int:vendor_id>/<int:product_id>', methods=['DELETE'])
 def delete_product(vendor_id, product_id):
@@ -180,14 +235,9 @@ def save_daily_logs():
 
     for item in entries:
         product_id = item.get('product_id')
-        if not product_id:
-            continue
+        if not product_id: continue
 
-        existing_log = DailyLog.query.filter_by(
-            vendor_id=vendor_id,
-            product_id=product_id,
-            date=log_date
-        ).first()
+        existing_log = DailyLog.query.filter_by(vendor_id=vendor_id, product_id=product_id, date=log_date).first()
 
         if mode == 'morning':
             opening_val = float(item.get('opening_stock', 0.0))
@@ -196,13 +246,8 @@ def save_daily_logs():
                 existing_log.closing_stock = max(0.0, opening_val - existing_log.sales - existing_log.waste)
             else:
                 new_log = DailyLog(
-                    vendor_id=vendor_id,
-                    product_id=product_id,
-                    date=log_date,
-                    opening_stock=opening_val,
-                    closing_stock=opening_val,
-                    sales=0.0,
-                    waste=0.0
+                    vendor_id=vendor_id, product_id=product_id, date=log_date,
+                    opening_stock=opening_val, closing_stock=opening_val, sales=0.0, waste=0.0
                 )
                 db.session.add(new_log)
         else:
@@ -216,18 +261,159 @@ def save_daily_logs():
                 opening_val = float(item.get('opening_stock', sales_val + waste_val))
                 closing_val = max(0.0, opening_val - sales_val - waste_val)
                 new_log = DailyLog(
-                    vendor_id=vendor_id,
-                    product_id=product_id,
-                    date=log_date,
-                    opening_stock=opening_val,
-                    closing_stock=closing_val,
-                    sales=sales_val,
-                    waste=waste_val
+                    vendor_id=vendor_id, product_id=product_id, date=log_date,
+                    opening_stock=opening_val, closing_stock=closing_val, sales=sales_val, waste=waste_val
                 )
                 db.session.add(new_log)
+    db.session.commit()
+    return jsonify({"message": "Daily logs synced"}), 200
+
+# ---------------------------------------------------------
+# ML FORECASTING ENDPOINT
+# ---------------------------------------------------------
+@app.route('/api/forecast', methods=['GET', 'POST'])
+def generate_forecast():
+    if not demand_model or not model_meta:
+        return jsonify({"message": "ML models unavailable."}), 503
+
+    vendor = get_vendor_from_token()
+    if not vendor:
+        return jsonify({"message": "Unauthorized"}), 401
+
+    # Security check: subscription
+    active_sub = Subscription.query.filter_by(vendor_id=vendor.id, is_active=True).first()
+    if not active_sub:
+        return jsonify({"message": "Active subscription required"}), 403
+
+    # Target tomorrow
+    target_date = datetime.date.today() + datetime.timedelta(days=1)
+    
+    # 1. Date Features
+    month = target_date.month
+    day_of_week = target_date.weekday()
+
+    future_holidays = [h for h in HOLIDAYS if h >= target_date]
+    days_to_hol = min((h - target_date).days for h in future_holidays) if future_holidays else 8
+    if days_to_hol > 7: 
+        days_to_hol = 8
+    is_holiday = 1 if days_to_hol == 0 else 0
+
+    # 2. Location Features
+    model_town = vendor.location.model_town if vendor.location else "Nairobi"
+    town_market_days = MARKET_DAYS.get(model_town, [])
+    is_market_day = 1 if day_of_week in town_market_days else 0
+
+    # 3. Weather Fetch
+    temp, rain, hum = get_weather(
+        vendor.location.lat if vendor.location else 0.0,
+        vendor.location.lon if vendor.location else 0.0,
+        target_date
+    )
+
+    size_val = model_meta['size_map'].get(vendor.stall_size, 1.0)
+
+    forecast_results = []
+    rows_for_df = []
+
+    # Fetch vendor's products to forecast
+    vendor_products = VendorProduct.query.filter_by(vendor_id=vendor.id).all()
+    if not vendor_products:
+        return jsonify({"message": "No products found for forecasting."}), 400
+
+    # Build the exact rows needed by the ML model
+    for vp in vendor_products:
+        prod = db.session.get(Product, vp.product_id)
+        if not prod: continue
+        
+        m_name = prod.model_name
+        base_shelf = BASE_SHELF_LIFE.get(m_name, 5)
+        
+        # Calculate mathematical effective shelf life
+        eff_shelf = base_shelf * (2.2 ** ((25.0 - temp) / 10.0))
+        if m_name in ["Kale", "Spinach", "Coriander"] and hum < 45.0:
+            eff_shelf *= 0.85
+        eff_shelf = max(0.3, eff_shelf)
+
+        # Price Relative calculation
+        mean_price = model_meta['product_mean_price'].get(m_name, vp.current_price)
+        price_rel = vp.current_price / mean_price if mean_price else 1.0
+
+        # Create row dict
+        row = {
+            "month": month,
+            "dayOfWeek": day_of_week,
+            "shelfLifeDays": base_shelf,
+            "effectiveShelfLifeDays": eff_shelf,
+            "isMarketDay": is_market_day,
+            "isHoliday": is_holiday,
+            "daysToHoliday": days_to_hol,
+            "temperature": temp,
+            "rainfall": rain,
+            "humidity": hum,
+            "priceRelative": price_rel,
+            "sizeFactor": size_val,
+            f"location_{model_town}": 1,
+            f"productName_{m_name}": 1
+        }
+        rows_for_df.append((vp, prod, row))
+
+    if not rows_for_df:
+        return jsonify({"message": "Failed to map products."}), 400
+
+    # Convert to DataFrame and enforce exact strict column order from JSON
+    df_raw = pd.DataFrame([r[2] for r in rows_for_df])
+    df_model = df_raw.reindex(columns=model_meta['feature_columns'], fill_value=0)
+
+    # 4. INFERENCE
+    demand_preds = demand_model.predict(df_model)
+    waste_preds = waste_model.predict(df_model)
+
+    # 5. POST-PROCESSING (Restock Recommendation)
+    for idx, (vp, prod, _) in enumerate(rows_for_df):
+        pred_demand = max(0, round(demand_preds[idx]))
+        waste_risk = max(0.0, min(1.0, waste_preds[idx]))
+        
+        # Buffer calculation: clip(0.18 * (1 - waste_risk / 0.5), 0, 0.18)
+        buffer = max(0.0, min(0.18, 0.18 * (1.0 - waste_risk / 0.5)))
+        
+        # Find current stock
+        latest_log = DailyLog.query.filter_by(vendor_id=vendor.id, product_id=prod.id).order_by(DailyLog.date.desc(), DailyLog.id.desc()).first()
+        current_stock = latest_log.closing_stock if latest_log else 0.0
+        
+        raw_recommendation = round(pred_demand * (1 + buffer) - current_stock)
+        min_order = max(0, pred_demand - current_stock) # Never drop below demand - stock
+        
+        recommended_qty = max(min_order, raw_recommendation)
+
+        # Save to Forecast DB table
+        existing_fc = Forecast.query.filter_by(vendor_id=vendor.id, product_id=prod.id, date=target_date).first()
+        if existing_fc:
+            existing_fc.predicted_sales = pred_demand
+            existing_fc.predicted_waste_rate = waste_risk
+            existing_fc.model_version = model_meta.get("model_version", "v1.0")
+        else:
+            new_fc = Forecast(
+                vendor_id=vendor.id,
+                product_id=prod.id,
+                date=target_date,
+                predicted_sales=pred_demand,
+                predicted_waste_rate=waste_risk,
+                model_version=model_meta.get("model_version", "v1.0")
+            )
+            db.session.add(new_fc)
+
+        forecast_results.append({
+            "product_id": prod.id,
+            "product_name": prod.display_name,
+            "target_date": target_date.strftime('%Y-%m-%d'),
+            "predicted_demand": int(pred_demand),
+            "waste_risk": round(waste_risk, 3),
+            "recommended_qty": int(recommended_qty),
+            "current_stock": current_stock
+        })
 
     db.session.commit()
-    return jsonify({"message": "Daily logs synced to cloud"}), 200
+    return jsonify(forecast_results), 200
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

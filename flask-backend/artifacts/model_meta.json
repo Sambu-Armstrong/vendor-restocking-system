@@ -1,0 +1,55 @@
+{
+  "model_version": "v1",
+  "split_date": "2025-07-01",
+  "feature_columns": [
+    "month",
+    "dayOfWeek",
+    "shelfLifeDays",
+    "effectiveShelfLifeDays",
+    "isMarketDay",
+    "isHoliday",
+    "daysToHoliday",
+    "temperature",
+    "rainfall",
+    "humidity",
+    "priceRelative",
+    "sizeFactor",
+    "location_Kakamega",
+    "location_Kawangware",
+    "location_Machakos",
+    "location_Mombasa",
+    "productName_Avocados",
+    "productName_Bananas",
+    "productName_Capsicum",
+    "productName_Coriander",
+    "productName_Kale",
+    "productName_Lemons",
+    "productName_Onions",
+    "productName_Spinach",
+    "productName_Tomatoes"
+  ],
+  "product_mean_price": {
+    "Avocados": 25.589910496338486,
+    "Bananas": 10.717207128250074,
+    "Capsicum": 26.651679449880984,
+    "Coriander": 18.837798696596668,
+    "Kale": 22.584053794428435,
+    "Lemons": 20.918098912662224,
+    "Onions": 14.879568106312293,
+    "Spinach": 21.870733788395903,
+    "Tomatoes": 10.801029435419013
+  },
+  "size_map": {
+    "small": 0.6,
+    "medium": 1.0,
+    "large": 1.5
+  },
+  "metrics": {
+    "demand_MAE": 4.872537950561181,
+    "demand_RMSE": 7.761236492833813,
+    "demand_MAPE": 13.423806662841963,
+    "cold_start_MAE": 9.641422626506513,
+    "cold_start_MAPE": 24.26592919302712,
+    "waste_MAE": 0.1022888984549805
+  }
+}
