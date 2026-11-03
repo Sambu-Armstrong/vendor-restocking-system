@@ -24,6 +24,7 @@ fun MainAppScreen(
     authViewModel: AuthViewModel,
     productViewModel: ProductViewModel,
     dailyLogViewModel: DailyLogViewModel,
+    forecastViewModel: ForecastViewModel,
     onLogout: () -> Unit
 ) {
     val navController = rememberNavController()
@@ -117,10 +118,7 @@ fun MainAppScreen(
                 )
             }
             composable("forecast_tab") {
-                Text(
-                    text = "Forecast & Analytics Screen (Phase 3 & 4 Tomorrow)",
-                    modifier = Modifier.padding(innerPadding)
-                )
+                ForecastScreen(viewModel = forecastViewModel)
             }
         }
     }

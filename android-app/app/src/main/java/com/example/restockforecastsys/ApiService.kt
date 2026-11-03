@@ -4,6 +4,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
 
@@ -73,6 +74,17 @@ data class GenericResponse(
     val message: String
 )
 
+// NEW DATA CLASS FOR PHASE 4
+data class ForecastDto(
+    val product_id: Int,
+    val product_name: String,
+    val target_date: String,
+    val predicted_demand: Int,
+    val waste_risk: Double,
+    val recommended_qty: Int,
+    val current_stock: Double
+)
+
 interface ApiService {
     @POST("register")
     suspend fun registerUser(@Body request: RegisterRequest): Response<AuthResponse>
@@ -97,4 +109,8 @@ interface ApiService {
 
     @POST("daily-logs")
     suspend fun saveDailyLogs(@Body request: SaveDailyLogRequest): Response<GenericResponse>
+
+    // NEW ENDPOINT FOR PHASE 4
+    @GET("forecast")
+    suspend fun getForecasts(@Header("Authorization") token: String): Response<List<ForecastDto>>
 }

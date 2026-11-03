@@ -54,6 +54,9 @@ class AuthViewModel(
                         body.first_name?.let {
                             sessionManager.saveUserName(it)
                         }
+                        body.token?.let {
+                            sessionManager.saveToken(it)
+                        }
                     }
                     authState = AuthState.Success
                 } else {

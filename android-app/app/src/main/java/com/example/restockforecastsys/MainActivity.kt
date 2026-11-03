@@ -15,6 +15,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.restockforecastsys.data.database.AppDatabase
 import com.example.restockforecastsys.data.repository.AuthRepository
 import com.example.restockforecastsys.ui.DailyLogViewModel
+import com.example.restockforecastsys.ui.ForecastViewModel
 import com.example.restockforecastsys.ui.auth.AuthViewModel
 import com.example.restockforecastsys.ui.auth.LoginScreen
 import com.example.restockforecastsys.ui.auth.RegisterScreen
@@ -42,6 +43,7 @@ class MainActivity : ComponentActivity() {
         val authViewModel = AuthViewModel(authRepository, sessionManager)
         val productViewModel = com.example.restockforecastsys.ui.products.ProductViewModel(productRepository, sessionManager)
         val dailyLogViewModel = DailyLogViewModel(sessionManager)
+        val forecastViewModel = ForecastViewModel(sessionManager)
 
         setContent {
             MaterialTheme {
@@ -84,6 +86,7 @@ class MainActivity : ComponentActivity() {
                                 authViewModel = authViewModel,
                                 productViewModel = productViewModel,
                                 dailyLogViewModel = dailyLogViewModel,
+                                forecastViewModel = forecastViewModel,
                                 onLogout = {
                                     navController.navigate("login") { popUpTo("main_app") { inclusive = true } }
                                 }
