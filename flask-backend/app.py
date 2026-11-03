@@ -58,6 +58,14 @@ HOLIDAYS = [
     datetime.date(2026, 3, 20),  datetime.date(2027, 3, 10)
 ]
 
+# Typical town climate baselines (temp C, rain mm, humidity %) if weather API is unavailable
+TOWN_WEATHER_FALLBACK = {
+    "Kawangware": (22.5, 1.2, 62.0),
+    "Machakos":   (24.0, 0.8, 55.0),
+    "Kakamega":   (23.5, 4.5, 72.0),
+    "Mombasa":    (28.5, 1.5, 78.0)
+}
+
 with app.app_context():
     db.create_all()
 
@@ -76,11 +84,22 @@ def get_vendor_from_token():
     except Exception:
         return None
 
-def get_weather(lat, lon, target_date):
-    """Fetches weather from OpenWeatherMap, with intelligent fallbacks per town/month."""
-    # API integration goes here using os.getenv('OWM_API_KEY')
-    # For now, returning typical warm baseline values to ensure demo stability
-    return 23.0, 0.0, 60.0  # temp(C), rain(mm), humidity(%)
+def get_weather(lat, lon, target_date, model_town="Kawangware"):
+    """Fetches weather from OpenWeatherMap, falling back to typical town values."""
+    api_key = os.getenv('OWM_API_KEY') or os.getenv('WEATHER_API_KEY')
+    if api_key and lat and lon:
+        try:
+            url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric"
+            resp = requests.get(url, timeout=3)
+            if resp.status_code == 200:
+                w_data = resp.json()
+                temp = float(w_data['main']['temp'])
+                hum = float(w_data['main']['humidity'])
+                rain = float(w_data.get('rain', {}).get('1h', 0.0))
+                return temp, rain, hum
+        except Exception:
+            pass
+    return TOWN_WEATHER_FALLBACK.get(model_town, (23.0, 0.0, 60.0))
 
 # ---------------------------------------------------------
 # ROUTES
@@ -298,19 +317,22 @@ def generate_forecast():
         days_to_hol = 8
     is_holiday = 1 if days_to_hol == 0 else 0
 
-    # 2. Location Features
-    model_town = vendor.location.model_town if vendor.location else "Nairobi"
-    town_market_days = MARKET_DAYS.get(model_town, [])
+    # 2. Location Features (Fetch Location via vendor.location_id)
+    location = db.session.get(Location, vendor.location_id)
+    model_town = location.model_town if location else "Kawangware"
+    town_market_days = MARKET_DAYS.get(model_town, ())
     is_market_day = 1 if day_of_week in town_market_days else 0
 
     # 3. Weather Fetch
     temp, rain, hum = get_weather(
-        vendor.location.lat if vendor.location else 0.0,
-        vendor.location.lon if vendor.location else 0.0,
-        target_date
+        location.lat if location else -1.2833,
+        location.lon if location else 36.7333,
+        target_date,
+        model_town
     )
 
-    size_val = model_meta['size_map'].get(vendor.stall_size, 1.0)
+    stall_key = (vendor.stall_size or "medium").lower()
+    size_val = float(model_meta['size_map'].get(stall_key, 1.0))
 
     forecast_results = []
     rows_for_df = []
@@ -323,10 +345,11 @@ def generate_forecast():
     # Build the exact rows needed by the ML model
     for vp in vendor_products:
         prod = db.session.get(Product, vp.product_id)
-        if not prod: continue
+        if not prod:
+            continue
         
         m_name = prod.model_name
-        base_shelf = BASE_SHELF_LIFE.get(m_name, 5)
+        base_shelf = BASE_SHELF_LIFE.get(m_name, 6)
         
         # Calculate mathematical effective shelf life
         eff_shelf = base_shelf * (2.2 ** ((25.0 - temp) / 10.0))
@@ -335,8 +358,9 @@ def generate_forecast():
         eff_shelf = max(0.3, eff_shelf)
 
         # Price Relative calculation
-        mean_price = model_meta['product_mean_price'].get(m_name, vp.current_price)
-        price_rel = vp.current_price / mean_price if mean_price else 1.0
+        mean_price = float(model_meta['product_mean_price'].get(m_name, vp.current_price or 15.0))
+        effective_price = vp.current_price if (vp.current_price and vp.current_price > 0) else mean_price
+        price_rel = float(effective_price / mean_price) if mean_price else 1.0
 
         # Create row dict
         row = {
@@ -370,35 +394,40 @@ def generate_forecast():
 
     # 5. POST-PROCESSING (Restock Recommendation)
     for idx, (vp, prod, _) in enumerate(rows_for_df):
-        pred_demand = max(0, round(demand_preds[idx]))
-        waste_risk = max(0.0, min(1.0, waste_preds[idx]))
+        pred_demand = int(max(0, round(float(demand_preds[idx]))))
+        waste_risk = float(max(0.0, min(1.0, float(waste_preds[idx]))))
         
         # Buffer calculation: clip(0.18 * (1 - waste_risk / 0.5), 0, 0.18)
-        buffer = max(0.0, min(0.18, 0.18 * (1.0 - waste_risk / 0.5)))
+        buffer = float(max(0.0, min(0.18, 0.18 * (1.0 - waste_risk / 0.5))))
         
         # Find current stock
-        latest_log = DailyLog.query.filter_by(vendor_id=vendor.id, product_id=prod.id).order_by(DailyLog.date.desc(), DailyLog.id.desc()).first()
-        current_stock = latest_log.closing_stock if latest_log else 0.0
+        latest_log = (
+            DailyLog.query
+            .filter_by(vendor_id=vendor.id, product_id=prod.id)
+            .order_by(DailyLog.date.desc(), DailyLog.id.desc())
+            .first()
+        )
+        current_stock = float(latest_log.closing_stock) if latest_log else 0.0
         
-        raw_recommendation = round(pred_demand * (1 + buffer) - current_stock)
-        min_order = max(0, pred_demand - current_stock) # Never drop below demand - stock
+        raw_recommendation = int(round(pred_demand * (1.0 + buffer) - current_stock))
+        min_order = int(max(0, round(pred_demand - current_stock)))  # Never drop below demand - stock
         
-        recommended_qty = max(min_order, raw_recommendation)
+        recommended_qty = int(max(min_order, raw_recommendation))
 
-        # Save to Forecast DB table
+        # Save to Forecast DB table (cast to standard Python float for PostgreSQL)
         existing_fc = Forecast.query.filter_by(vendor_id=vendor.id, product_id=prod.id, date=target_date).first()
         if existing_fc:
-            existing_fc.predicted_sales = pred_demand
-            existing_fc.predicted_waste_rate = waste_risk
-            existing_fc.model_version = model_meta.get("model_version", "v1.0")
+            existing_fc.predicted_sales = float(pred_demand)
+            existing_fc.predicted_waste_rate = float(waste_risk)
+            existing_fc.model_version = str(model_meta.get("model_version", "v1"))
         else:
             new_fc = Forecast(
                 vendor_id=vendor.id,
                 product_id=prod.id,
                 date=target_date,
-                predicted_sales=pred_demand,
-                predicted_waste_rate=waste_risk,
-                model_version=model_meta.get("model_version", "v1.0")
+                predicted_sales=float(pred_demand),
+                predicted_waste_rate=float(waste_risk),
+                model_version=str(model_meta.get("model_version", "v1"))
             )
             db.session.add(new_fc)
 
@@ -406,9 +435,9 @@ def generate_forecast():
             "product_id": prod.id,
             "product_name": prod.display_name,
             "target_date": target_date.strftime('%Y-%m-%d'),
-            "predicted_demand": int(pred_demand),
+            "predicted_demand": pred_demand,
             "waste_risk": round(waste_risk, 3),
-            "recommended_qty": int(recommended_qty),
+            "recommended_qty": recommended_qty,
             "current_stock": current_stock
         })
 
