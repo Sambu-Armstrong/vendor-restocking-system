@@ -11,7 +11,7 @@ from flask_cors import CORS
 from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
 from models import db, User, Vendor, Location, Product, VendorProduct, DailyLog, Subscription, Forecast
-
+from sqlalchemy.pool import NullPool
 # Load environment variables
 load_dotenv()
 
@@ -23,8 +23,7 @@ bcrypt = Bcrypt(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,
-    'pool_recycle': 300
+    'poolclass': NullPool
 }
 
 db.init_app(app)
@@ -44,7 +43,7 @@ except Exception as e:
 
 BASE_SHELF_LIFE = {
     "Tomatoes": 6, "Kale": 2, "Spinach": 2, "Coriander": 2,
-    "Capsicum": 7, "Bananas": 6, "Avocados": 7, "Lemons": 21, "Onions": 30
+    "Capsicum": 7, "Bananas": 6, "Avocados": 7, "Lemons": 12, "Onions": 20
 }
 
 MARKET_DAYS = {

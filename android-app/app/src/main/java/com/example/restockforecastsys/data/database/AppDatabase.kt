@@ -24,7 +24,7 @@ import com.example.restockforecastsys.data.entity.Product
 @Database(
     // Added SalesEntry and StockLog here
     entities = [Role::class, User::class, Vendor::class, Product::class, SalesEntry::class, StockLog::class],
-    version = 3, // Bumped to 3
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

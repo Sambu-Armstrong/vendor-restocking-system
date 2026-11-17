@@ -1,9 +1,11 @@
 package com.example.restockforecastsys.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
@@ -13,6 +15,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.restockforecastsys.DailyLogDto
@@ -201,7 +209,6 @@ fun HomeScreen(
                             )
                         } else {
                             vendorProducts.forEach { product ->
-                                // Latest log for this product gives its current available stock
                                 val latestLog = recentLogs.firstOrNull { it.product_id == product.productId }
                                 val currentStock = latestLog?.closing_stock ?: 0.0
 
@@ -230,6 +237,13 @@ fun HomeScreen(
                             }
                         }
                     }
+                }
+            }
+
+            // Sales & Waste Trend Graph Section
+            if (recentLogs.isNotEmpty()) {
+                item {
+                    SalesAndWasteTrendCard(logs = recentLogs)
                 }
             }
 
@@ -262,6 +276,177 @@ fun HomeScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun SalesAndWasteTrendCard(logs: List<DailyLogDto>) {
+    // Group by date ascending and take up to the last 7 logged days
+    val dailyPoints = remember(logs) {
+        logs.groupBy { it.date }
+            .map { (date, entries) ->
+                Triple(
+                    date,
+                    entries.sumOf { it.sales }.toFloat(),
+                    entries.sumOf { it.waste }.toFloat()
+                )
+            }
+            .sortedBy { it.first }
+            .takeLast(7)
+    }
+
+    if (dailyPoints.isEmpty()) return
+
+    val maxVal = remember(dailyPoints) {
+        (dailyPoints.maxOfOrNull { maxOf(it.second, it.third) } ?: 10f).coerceAtLeast(10f)
+    }
+
+    val salesColor = Color(0xFF2E7D32) // Green
+    val wasteColor = Color(0xFFD32F2F) // Red
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Sales vs. Spoilage Trend",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Last ${dailyPoints.size} logged days (Total Units)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LegendDot(color = salesColor, label = "Sales")
+                    LegendDot(color = wasteColor, label = "Waste")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val canvasWidth = size.width
+                    val canvasHeight = size.height
+                    val stepX = if (dailyPoints.size > 1) {
+                        canvasWidth / (dailyPoints.size - 1).toFloat()
+                    } else {
+                        canvasWidth / 2f
+                    }
+
+                    // Horizontal guide lines
+                    val gridLines = 4
+                    for (i in 0..gridLines) {
+                        val y = canvasHeight - (canvasHeight / gridLines) * i
+                        drawLine(
+                            color = Color.LightGray.copy(alpha = 0.5f),
+                            start = Offset(0f, y),
+                            end = Offset(canvasWidth, y),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+
+                    val salesPath = Path()
+                    val wastePath = Path()
+
+                    dailyPoints.forEachIndexed { index, (_, salesTotal, wasteTotal) ->
+                        val x = if (dailyPoints.size > 1) index * stepX else canvasWidth / 2f
+                        val salesY = (1f - (salesTotal / maxVal)) * canvasHeight
+                        val wasteY = (1f - (wasteTotal / maxVal)) * canvasHeight
+
+                        if (index == 0) {
+                            salesPath.moveTo(x, salesY)
+                            wastePath.moveTo(x, wasteY)
+                        } else {
+                            salesPath.lineTo(x, salesY)
+                            wastePath.lineTo(x, wasteY)
+                        }
+
+                        drawCircle(
+                            color = salesColor,
+                            radius = 4.dp.toPx(),
+                            center = Offset(x, salesY)
+                        )
+                        drawCircle(
+                            color = wasteColor,
+                            radius = 4.dp.toPx(),
+                            center = Offset(x, wasteY)
+                        )
+                    }
+
+                    if (dailyPoints.size > 1) {
+                        drawPath(
+                            path = salesPath,
+                            color = salesColor,
+                            style = Stroke(
+                                width = 3.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
+                        drawPath(
+                            path = wastePath,
+                            color = wasteColor,
+                            style = Stroke(
+                                width = 2.5.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // X-axis date labels (MM-DD)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                dailyPoints.forEach { (dateStr, _, _) ->
+                    val shortDate = if (dateStr.length >= 10) dateStr.substring(5, 10) else dateStr
+                    Text(
+                        text = shortDate,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LegendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .background(color, CircleShape)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 

@@ -15,7 +15,8 @@ class AuthRepository(
 ) {
 
     suspend fun registerVendor(
-        name: String,
+        firstName: String,
+        lastName: String,
         email: String,
         phone: String,
         password: String,
@@ -36,13 +37,14 @@ class AuthRepository(
             newRoleId.toInt()
         }
 
-        // 3. Hash password and build User entity
-        val hashedPassword = PasswordHasher.hash(password)
+        // 3. Hash password with SALT and build User entity
+        val saltedHashedPassword = PasswordHasher.hashPassword(password)
         val newUser = User(
-            name = name,
+            firstName = firstName,
+            lastName = lastName,
             email = email,
             phone = phone,
-            password = hashedPassword,
+            password = saltedHashedPassword,
             dateRegistered = System.currentTimeMillis(),
             roleId = roleId
         )
@@ -65,8 +67,13 @@ class AuthRepository(
         val user = userDao.getByEmail(email)
             ?: throw Exception("No account found with this email.")
 
-        val inputHashed = PasswordHasher.hash(password)
-        if (user.password == inputHashed) {
+        // Verify input password against the stored salted hash
+        val isPasswordValid = PasswordHasher.verifyPassword(
+            inputPassword = password,
+            storedPassword = user.password
+        )
+
+        if (isPasswordValid) {
             return user
         } else {
             throw Exception("Incorrect password.")
