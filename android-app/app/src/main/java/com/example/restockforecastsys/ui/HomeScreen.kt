@@ -27,6 +27,7 @@ import com.example.restockforecastsys.DailyLogDto
 import com.example.restockforecastsys.ui.auth.AuthViewModel
 import com.example.restockforecastsys.ui.products.ProductViewModel
 import java.time.LocalDate
+import androidx.compose.material.icons.filled.AccountCircle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,7 +38,8 @@ fun HomeScreen(
     onLogoutSuccess: () -> Unit,
     onNavigateToDailyLog: () -> Unit,
     onNavigateToProducts: () -> Unit,
-    onNavigateToForecast: () -> Unit
+    onNavigateToForecast: () -> Unit,
+    onNavigateToProfile: () -> Unit
 ) {
     val vendorName = viewModel.getUserName()
     val vendorProducts by productViewModel.vendorProducts.collectAsState()
@@ -75,6 +77,12 @@ fun HomeScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = onNavigateToProfile) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Edit Profile"
+                        )
+                    }
                     IconButton(onClick = {
                         viewModel.logout()
                         onLogoutSuccess()
@@ -84,6 +92,7 @@ fun HomeScreen(
                             contentDescription = "Log Out"
                         )
                     }
+
                 }
             )
         }

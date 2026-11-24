@@ -52,7 +52,7 @@ class ProductViewModel(
         }
     }
 
-    fun addProductFromCatalog(catalogItem: CatalogItem) {
+    fun addProductFromCatalog(catalogItem: CatalogItem, price: Double) {
         val currentVendorId = sessionManager.getUserId()
         if (currentVendorId == -1) return
 
@@ -64,7 +64,29 @@ class ProductViewModel(
                     vendor_id = currentVendorId,
                     display_name = catalogItem.name,
                     model_name = catalogItem.name,
-                    current_price = 0.0
+                    current_price = price
+                )
+                val response = RetrofitClient.apiService.addVendorProduct(request)
+                if (response.isSuccessful) {
+                    loadVendorProducts()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun updateProductPrice(product: Product, newPrice: Double) {
+        val currentVendorId = sessionManager.getUserId()
+        if (currentVendorId == -1) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val request = AddProductRequest(
+                    vendor_id = currentVendorId,
+                    display_name = product.name,
+                    model_name = product.name,
+                    current_price = newPrice
                 )
                 val response = RetrofitClient.apiService.addVendorProduct(request)
                 if (response.isSuccessful) {

@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.restockforecastsys.LoginRequest
 import com.example.restockforecastsys.RegisterRequest
 import com.example.restockforecastsys.RetrofitClient
+import com.example.restockforecastsys.UpdateProfileRequest
+import com.example.restockforecastsys.VendorProfileDto
 import com.example.restockforecastsys.data.repository.AuthRepository
 import com.example.restockforecastsys.util.SessionManager
 import kotlinx.coroutines.Dispatchers
@@ -28,8 +30,21 @@ class AuthViewModel(
     var authState: AuthState by mutableStateOf(AuthState.Idle)
         private set
 
+    var vendorProfile: VendorProfileDto? by mutableStateOf(null)
+        private set
+
+    var profileLoading: Boolean by mutableStateOf(false)
+        private set
+
+    var profileStatusMessage: String? by mutableStateOf(null)
+        private set
+
     fun resetState() {
         authState = AuthState.Idle
+    }
+
+    fun clearProfileStatus() {
+        profileStatusMessage = null
     }
 
     fun login(email: String, password: String) {
@@ -105,7 +120,67 @@ class AuthViewModel(
         }
     }
 
+    fun loadProfile() {
+        val token = sessionManager.getToken() ?: return
+        profileLoading = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val response = RetrofitClient.apiService.getProfile("Bearer $token")
+                if (response.isSuccessful) {
+                    vendorProfile = response.body()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                profileLoading = false
+            }
+        }
+    }
+
+    fun updateProfile(
+        firstName: String,
+        lastName: String,
+        phone: String,
+        businessName: String,
+        location: String,
+        stallSize: String
+    ) {
+        val token = sessionManager.getToken()
+        if (token.isNullOrEmpty()) {
+            profileStatusMessage = "Session expired. Please log in again."
+            return
+        }
+
+        profileLoading = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val request = UpdateProfileRequest(
+                    first_name = firstName.trim(),
+                    last_name = lastName.trim(),
+                    phone = phone.trim(),
+                    business_name = businessName.trim(),
+                    location = location,
+                    stall_size = stallSize
+                )
+                val response = RetrofitClient.apiService.updateProfile("Bearer $token", request)
+                if (response.isSuccessful) {
+                    val updated = response.body()
+                    vendorProfile = updated
+                    updated?.first_name?.let { sessionManager.saveUserName(it) }
+                    profileStatusMessage = "Profile updated successfully"
+                } else {
+                    profileStatusMessage = "Failed to update profile"
+                }
+            } catch (e: Exception) {
+                profileStatusMessage = "Network error. Check Wi-Fi connection."
+            } finally {
+                profileLoading = false
+            }
+        }
+    }
+
     fun logout() {
+        vendorProfile = null
         sessionManager.clearSession()
         authState = AuthState.Idle
     }

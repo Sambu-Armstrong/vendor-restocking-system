@@ -87,6 +87,7 @@ fun MainAppScreen(
                     productViewModel = productViewModel,
                     dailyLogViewModel = dailyLogViewModel,
                     onLogoutSuccess = onLogout,
+                    onNavigateToProfile = { navController.navigate("profile") },
                     onNavigateToDailyLog = {
                         navController.navigate("log_tab") {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -102,6 +103,12 @@ fun MainAppScreen(
                             restoreState = true
                         }
                     }
+                )
+            }
+            composable("profile") {
+                ProfileScreen(
+                    authViewModel = authViewModel,
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             composable("products") {
