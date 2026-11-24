@@ -6,6 +6,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 
 data class RegisterRequest(
@@ -29,6 +30,25 @@ data class AuthResponse(
     val token: String? = null,
     val vendor_id: Int? = null,
     val first_name: String? = null
+)
+
+data class VendorProfileDto(
+    val first_name: String,
+    val last_name: String,
+    val email: String,
+    val phone: String,
+    val business_name: String,
+    val location: String,
+    val stall_size: String
+)
+
+data class UpdateProfileRequest(
+    val first_name: String,
+    val last_name: String,
+    val phone: String,
+    val business_name: String,
+    val location: String,
+    val stall_size: String
 )
 
 data class CloudProductDto(
@@ -74,7 +94,6 @@ data class GenericResponse(
     val message: String
 )
 
-// NEW DATA CLASS FOR PHASE 4
 data class ForecastDto(
     val product_id: Int,
     val product_name: String,
@@ -91,6 +110,15 @@ interface ApiService {
 
     @POST("login")
     suspend fun loginUser(@Body request: LoginRequest): Response<AuthResponse>
+
+    @GET("profile")
+    suspend fun getProfile(@Header("Authorization") token: String): Response<VendorProfileDto>
+
+    @PUT("profile")
+    suspend fun updateProfile(
+        @Header("Authorization") token: String,
+        @Body request: UpdateProfileRequest
+    ): Response<VendorProfileDto>
 
     @GET("products/{vendor_id}")
     suspend fun getVendorProducts(@Path("vendor_id") vendorId: Int): Response<List<CloudProductDto>>
@@ -110,7 +138,6 @@ interface ApiService {
     @POST("daily-logs")
     suspend fun saveDailyLogs(@Body request: SaveDailyLogRequest): Response<GenericResponse>
 
-    // NEW ENDPOINT FOR PHASE 4
     @GET("forecast")
     suspend fun getForecasts(@Header("Authorization") token: String): Response<List<ForecastDto>>
 }
