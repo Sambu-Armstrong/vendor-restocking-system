@@ -93,22 +93,28 @@ def get_or_create_location(loc_name):
     return location
 
 def get_weather(lat, lon, target_date, model_town="Kawangware"):
-    """Fetches live weather via OpenWeatherMap API, falling back to town climate baselines."""
+    """Fetches tomorrow's forecasted weather via OpenWeatherMap, falling back to town baselines."""
     api_key = os.getenv('OWM_API_KEY') or os.getenv('WEATHER_API_KEY')
     if not lat or not lon:
         lat, lon = TOWN_COORDS.get(model_town, (-1.2833, 36.7333))
 
     if api_key and lat and lon:
         try:
-            url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric"
+            url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={api_key}&units=metric"
             resp = requests.get(url, timeout=4)
             if resp.status_code == 200:
                 w_data = resp.json()
-                temp = float(w_data['main']['temp'])
-                hum = float(w_data['main']['humidity'])
-                rain = float(w_data.get('rain', {}).get('1h', 0.0))
-                print(f"[Weather LIVE] {model_town}: temp={temp}C, rain={rain}mm, hum={hum}%")
-                return temp, rain, hum
+                target_str = target_date.strftime('%Y-%m-%d')
+                all_tomorrow = [x for x in w_data.get('list', []) if x.get('dt_txt', '').startswith(target_str)]
+                daytime = [x for x in all_tomorrow if any(h in x.get('dt_txt', '') for h in ("06:00:00", "09:00:00", "12:00:00", "15:00:00", "18:00:00"))]
+                slots = daytime if daytime else all_tomorrow
+
+                if slots:
+                    temp = round(sum(float(s['main']['temp']) for s in slots) / len(slots), 2)
+                    hum = round(sum(float(s['main']['humidity']) for s in slots) / len(slots), 2)
+                    rain = round(sum(float(s.get('rain', {}).get('3h', 0.0)) / 3.0 for s in slots) / len(slots), 2)
+                    print(f"[Weather FORECAST {target_str}] {model_town}: temp={temp}C, rain={rain}mm/h, hum={hum}%")
+                    return temp, rain, hum
             else:
                 print(f"[Weather API Warning] Status {resp.status_code}: {resp.text}")
         except Exception as e:
