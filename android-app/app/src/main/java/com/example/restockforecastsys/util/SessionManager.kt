@@ -35,6 +35,6 @@ class SessionManager(context: Context) {
     }
 
     fun clearSession() {
-        prefs.edit().clear().apply()
+        prefs.edit().clear().apply()// saves changes
     }
 }

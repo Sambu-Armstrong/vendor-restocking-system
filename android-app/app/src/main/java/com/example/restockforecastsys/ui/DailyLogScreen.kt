@@ -35,6 +35,7 @@ fun DailyLogScreen(
     val context = LocalContext.current
 
     val todayStr = remember { LocalDate.now().toString() }
+    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
 
     // Map of productId -> input strings
     val morningInputs = remember { mutableStateMapOf<Int, String>() }
@@ -93,7 +94,6 @@ fun DailyLogScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .imePadding()
         ) {
             TabRow(selectedTabIndex = selectedTabIndex) {
                 tabs.forEachIndexed { index, title ->
@@ -127,7 +127,11 @@ fun DailyLogScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(16.dp),
+                        .padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(
+                        top = 16.dp,
+                        bottom = (imeBottom - 64.dp).coerceAtLeast(16.dp)
+                    ),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item {
@@ -179,14 +183,30 @@ fun DailyLogScreen(
                                     }
                                 } else {
                                     val payload = mutableMapOf<Int, Pair<Double, Double>>()
+                                    var validationError: String? = null
+
                                     vendorProducts.forEach { p ->
                                         val s = eveningSalesInputs[p.productId]?.toDoubleOrNull()
                                         val w = eveningWasteInputs[p.productId]?.toDoubleOrNull() ?: 0.0
+                                        val todayLog = recentLogs.find {
+                                            it.product_id == p.productId && it.date == todayStr
+                                        }
+                                        val opening = todayLog?.opening_stock ?: 0.0
+
                                         if (s != null && s >= 0) {
-                                            payload[p.productId] = Pair(s, w)
+                                            if (w < 0) {
+                                                validationError = "${p.name}: Spoiled waste cannot be negative"
+                                            } else if (opening > 0 && (s + w) > opening) {
+                                                validationError = "${p.name}: Sold + Waste (${"%.1f".format(s + w)}) cannot exceed Opening Stock ($opening)"
+                                            } else {
+                                                payload[p.productId] = Pair(s, w)
+                                            }
                                         }
                                     }
-                                    if (payload.isEmpty()) {
+
+                                    if (validationError != null) {
+                                        Toast.makeText(context, validationError, Toast.LENGTH_LONG).show()
+                                    } else if (payload.isEmpty()) {
                                         Toast.makeText(context, "Enter units sold for at least one product", Toast.LENGTH_SHORT).show()
                                     } else {
                                         dailyLogViewModel.saveEveningSales(payload)
@@ -259,6 +279,11 @@ fun ProductLogEntryCard(
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
+                val soldNum = salesValue.toDoubleOrNull() ?: 0.0
+                val wasteNum = wasteValue.toDoubleOrNull() ?: 0.0
+                val exceedsOpening = loggedOpeningStock > 0 && (soldNum + wasteNum) > loggedOpeningStock
+                val projectedClosing = (loggedOpeningStock - soldNum - wasteNum).coerceAtLeast(0.0)
+
                 Text(
                     text = "Today's Opening Stock: $loggedOpeningStock ${product.unitOfMeasure}",
                     style = MaterialTheme.typography.bodySmall,
@@ -271,6 +296,7 @@ fun ProductLogEntryCard(
                         value = salesValue,
                         onValueChange = onSalesChange,
                         label = { Text("Sold (${product.unitOfMeasure})") },
+                        isError = exceedsOpening,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.weight(1f)
@@ -279,22 +305,23 @@ fun ProductLogEntryCard(
                         value = wasteValue,
                         onValueChange = onWasteChange,
                         label = { Text("Spoiled / Waste") },
+                        isError = exceedsOpening,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                 }
 
-                val soldNum = salesValue.toDoubleOrNull() ?: 0.0
-                val wasteNum = wasteValue.toDoubleOrNull() ?: 0.0
-                val projectedClosing = (loggedOpeningStock - soldNum - wasteNum).coerceAtLeast(0.0)
-
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Closing Stock (Carried Forward): ${"%.1f".format(projectedClosing)} ${product.unitOfMeasure}",
+                    text = if (exceedsOpening) {
+                        "Error: Sold + Waste exceeds Opening Stock ($loggedOpeningStock ${product.unitOfMeasure})"
+                    } else {
+                        "Closing Stock (Carried Forward): ${"%.1f".format(projectedClosing)} ${product.unitOfMeasure}"
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = if (exceedsOpening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 )
             }
         }

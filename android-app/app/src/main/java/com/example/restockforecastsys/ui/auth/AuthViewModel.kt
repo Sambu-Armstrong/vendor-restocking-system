@@ -15,11 +15,12 @@ import com.example.restockforecastsys.util.SessionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+// 4-way traffic light telling LoginScreen and RegisterScreen what to display
 sealed class AuthState {
-    object Idle : AuthState()
-    object Loading : AuthState()
-    object Success : AuthState()
-    data class Error(val message: String) : AuthState()
+    object Idle : AuthState()                    // Waiting for user input
+    object Loading : AuthState()                 // Talking to Flask (shows spinner)
+    object Success : AuthState()                 // Request succeeded (triggers navigation)
+    data class Error(val message: String) : AuthState() // Failed (shows red error text)
 }
 
 class AuthViewModel(
@@ -27,6 +28,8 @@ class AuthViewModel(
     private val sessionManager: SessionManager
 ) : ViewModel() {
 
+    // mutableStateOf triggers automatic screen redraws whenever these values change.
+    // 'private set' means screens can read them, but only this ViewModel can change them.
     var authState: AuthState by mutableStateOf(AuthState.Idle)
         private set
 
@@ -39,10 +42,12 @@ class AuthViewModel(
     var profileStatusMessage: String? by mutableStateOf(null)
         private set
 
+    // Resets state back to Idle after navigation so screens don't re-trigger
     fun resetState() {
         authState = AuthState.Idle
     }
 
+    // Clears the toast/status message after it has been shown once
     fun clearProfileStatus() {
         profileStatusMessage = null
     }
@@ -54,6 +59,7 @@ class AuthViewModel(
         }
 
         authState = AuthState.Loading
+        // Run network call on background IO thread so the phone UI never freezes
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val request = LoginRequest(email.trim(), password)
@@ -63,6 +69,7 @@ class AuthViewModel(
                     val body = response.body()
                     val vendorId = body?.vendor_id
 
+                    // Save vendor ID, first name, and JWT token locally on the phone
                     if (vendorId != null) {
                         sessionManager.clearSession()
                         sessionManager.saveUserId(vendorId)
@@ -120,6 +127,7 @@ class AuthViewModel(
         }
     }
 
+    // Fetches current vendor details using the saved JWT token to pre-fill Edit Profile
     fun loadProfile() {
         val token = sessionManager.getToken() ?: return
         profileLoading = true
@@ -132,11 +140,13 @@ class AuthViewModel(
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
+                // Always hide spinner whether the call succeeded or failed
                 profileLoading = false
             }
         }
     }
 
+    // Sends edited profile fields to Flask and updates local first name if changed
     fun updateProfile(
         firstName: String,
         lastName: String,
@@ -179,6 +189,7 @@ class AuthViewModel(
         }
     }
 
+    // Wipes saved session data when the user logs out
     fun logout() {
         vendorProfile = null
         sessionManager.clearSession()

@@ -9,6 +9,8 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 
+// --- DATA MODELS (JSON Envelopes: Request = sent to Flask, Response/Dto = received from Flask) ---
+
 data class RegisterRequest(
     val firstName: String,
     val lastName: String,
@@ -25,6 +27,7 @@ data class LoginRequest(
     val password: String
 )
 
+// Nullable fields (? = null) prevent crashes if login fails and Flask sends only an error message
 data class AuthResponse(
     val message: String,
     val token: String? = null,
@@ -77,6 +80,7 @@ data class DailyLogDto(
     val waste: Double
 )
 
+// Holds one product's stock/sales numbers inside the bulk daily log list
 data class DailyLogEntryPayload(
     val product_id: Int,
     val opening_stock: Double = 0.0,
@@ -84,12 +88,14 @@ data class DailyLogEntryPayload(
     val waste: Double = 0.0
 )
 
+// Bundles all product entries into a single request so the app makes one network call instead of many
 data class SaveDailyLogRequest(
     val vendor_id: Int,
     val mode: String, // "morning" or "evening"
     val entries: List<DailyLogEntryPayload>
 )
 
+// Used when Flask only returns a confirmation text message
 data class GenericResponse(
     val message: String
 )
@@ -104,14 +110,16 @@ data class ForecastDto(
     val current_stock: Double
 )
 
+// --- API ENDPOINTS (Routes appended to BASE_URL; 'suspend' runs them in background coroutines) ---
+
 interface ApiService {
-    @POST("register")
+    @POST("register") // @Body converts Kotlin object to JSON
     suspend fun registerUser(@Body request: RegisterRequest): Response<AuthResponse>
 
     @POST("login")
     suspend fun loginUser(@Body request: LoginRequest): Response<AuthResponse>
 
-    @GET("profile")
+    @GET("profile") // @Header attaches "Bearer <token>" for Flask JWT verification
     suspend fun getProfile(@Header("Authorization") token: String): Response<VendorProfileDto>
 
     @PUT("profile")
@@ -120,7 +128,7 @@ interface ApiService {
         @Body request: UpdateProfileRequest
     ): Response<VendorProfileDto>
 
-    @GET("products/{vendor_id}")
+    @GET("products/{vendor_id}") // @Path injects vendorId directly into the URL
     suspend fun getVendorProducts(@Path("vendor_id") vendorId: Int): Response<List<CloudProductDto>>
 
     @POST("products")
@@ -138,6 +146,6 @@ interface ApiService {
     @POST("daily-logs")
     suspend fun saveDailyLogs(@Body request: SaveDailyLogRequest): Response<GenericResponse>
 
-    @GET("forecast")
+    @GET("forecast") // Protected route: requires JWT token to identify vendor & check subscription
     suspend fun getForecasts(@Header("Authorization") token: String): Response<List<ForecastDto>>
 }
