@@ -15,24 +15,28 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+// Manages the vendor's active produce catalog and syncs changes with Flask/Supabase
 class ProductViewModel(
     private val repository: ProductRepository,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager // Provides logged-in vendor_id
 ) : ViewModel() {
 
+    // Private mutable list; UI screens observe the read-only StateFlow below via collectAsState()
     private val _vendorProducts = MutableStateFlow<List<Product>>(emptyList())
     val vendorProducts: StateFlow<List<Product>> = _vendorProducts.asStateFlow()
 
+    // Fetches vendor's products from Supabase and enriches them with local catalog units & shelf life
     fun loadVendorProducts() {
         val currentVendorId = sessionManager.getUserId()
-        if (currentVendorId == -1) return
+        if (currentVendorId == -1) return // Abort if no vendor is logged in
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) { // Run network call on background IO thread
             try {
                 val response = RetrofitClient.apiService.getVendorProducts(currentVendorId)
                 if (response.isSuccessful) {
                     val cloudList = response.body().orEmpty()
                     _vendorProducts.value = cloudList.map { dto ->
+                        // Match cloud crop name to ProductCatalog to attach unit (piece/bunch) & shelf life
                         val catalogMatch = ProductCatalog.items.find { it.name == dto.display_name }
                         Product(
                             productId = dto.product_id,
@@ -52,10 +56,12 @@ class ProductViewModel(
         }
     }
 
+    // Adds a new catalog crop with the vendor's unit price to Supabase (blocks duplicates)
     fun addProductFromCatalog(catalogItem: CatalogItem, price: Double) {
         val currentVendorId = sessionManager.getUserId()
         if (currentVendorId == -1) return
 
+        // Prevent adding the same product twice
         if (_vendorProducts.value.any { it.name == catalogItem.name }) return
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -68,7 +74,7 @@ class ProductViewModel(
                 )
                 val response = RetrofitClient.apiService.addVendorProduct(request)
                 if (response.isSuccessful) {
-                    loadVendorProducts()
+                    loadVendorProducts() // Refresh UI list after saving
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -76,6 +82,7 @@ class ProductViewModel(
         }
     }
 
+    // Updates an existing product's unit selling price (uses Flask's upsert POST /api/products route)
     fun updateProductPrice(product: Product, newPrice: Double) {
         val currentVendorId = sessionManager.getUserId()
         if (currentVendorId == -1) return
@@ -90,7 +97,7 @@ class ProductViewModel(
                 )
                 val response = RetrofitClient.apiService.addVendorProduct(request)
                 if (response.isSuccessful) {
-                    loadVendorProducts()
+                    loadVendorProducts() // Refresh UI with updated price
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -98,6 +105,7 @@ class ProductViewModel(
         }
     }
 
+    // Unlinks a product from the vendor's active stall catalog in Supabase
     fun removeProduct(product: Product) {
         val currentVendorId = sessionManager.getUserId()
         if (currentVendorId == -1) return
@@ -109,7 +117,7 @@ class ProductViewModel(
                     productId = product.productId
                 )
                 if (response.isSuccessful) {
-                    loadVendorProducts()
+                    loadVendorProducts() // Refresh UI after deletion
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
